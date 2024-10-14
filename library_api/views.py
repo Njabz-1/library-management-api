@@ -34,12 +34,23 @@ class TransactionViewSet(viewsets.ModelViewSet):
             return Response({"error": "Book or User not found"}, status=status.HTTP_404_NOT_FOUND)
 
         if book.copies_available > 0:
+            # Check if user already has a copy of this book
+            existing_transaction = Transaction.objects.filter(
+                book=book, 
+                user=user, 
+                is_returned=False
+            ).first()
+            
+            if existing_transaction:
+                return Response({"error": "User already has a copy of this book"}, status=status.HTTP_400_BAD_REQUEST)
+            
             transaction = Transaction.objects.create(book=book, user=user)
             book.copies_available -= 1
             book.save()
             return Response(TransactionSerializer(transaction).data, status=status.HTTP_201_CREATED)
         else:
             return Response({"error": "No copies available"}, status=status.HTTP_400_BAD_REQUEST)
+
 
     @action(detail=True, methods=['post'])
     def return_book(self, request, pk=None):
@@ -53,3 +64,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
             return Response(TransactionSerializer(transaction).data)
         else:
             return Response({"error": "Book already returned"}, status=status.HTTP_400_BAD_REQUEST)
+        
+    @action(detail=False, methods=['get'])
+    def user_history(self, request):
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response({"error": "User ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        transactions = Transaction.objects.filter(user_id=user_id)
+        serializer = self.get_serializer(transactions, many=True)
+        return Response(serializer.data)
