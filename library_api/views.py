@@ -10,10 +10,14 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+import logging
+from django.contrib.auth import authenticate
 
+logger = logging.getLogger(__name__)
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
 
 class BookViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -87,18 +91,31 @@ class TransactionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(transactions, many=True)
         return Response(serializer.data)
     
+
 class CustomAuthToken(ObtainAuthToken):
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data,
                                            context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        token, created = Token.objects.get_or_create(user=user)
-        return Response({
-            'token': token.key,
-            'user_id': user.pk,
-            'email': user.email
-        })
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            token, created = Token.objects.get_or_create(user=user)
+            logger.info(f"Token created for user: {user.username}")
+            return Response({
+                'token': token.key,
+                'user_id': user.pk,
+                'email': user.email
+            })
+        else:
+            logger.error(f"Authentication failed: {serializer.errors}")
+            # Try manual authentication
+            username = request.data.get('username')
+            password = request.data.get('password')
+            user = authenticate(username=username, password=password)
+            if user:
+                logger.info(f"Manual authentication succeeded for user: {username}")
+            else:
+                logger.error(f"Manual authentication failed for user: {username}")
+            return Response(serializer.errors, status=400)
     
 class RegisterView(APIView):
     permission_classes = []
